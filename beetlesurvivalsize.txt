@@ -1,0 +1,148 @@
+setwd("C:/Users/Eric/Desktop/metamorphosis")
+#packages needed
+library(readr)
+library(tidyverse)
+library(brms)
+#pull in dataset -> move to github eventually
+beetle <- read_csv(
+  "C:/Users/Eric/Desktop/metamorphosis/beetleemergenceandsize.csv")
+#survival dummy -> survival = 1
+beetle$surv <- factor(
+  ifelse(as.character(beetle$Survival)=='Yes',1,0))
+beetle$surv <- as.numeric(
+  levels(beetle$surv)[as.integer(beetle$surv)])
+#infected dummy -> infected = 1
+beetle$inf <- factor(
+  ifelse(as.character(beetle$Infection)=='Infected','1','0'))
+beetle$inf <- as.numeric(
+  levels(beetle$inf)[as.integer(beetle$inf)])
+#trial dummy -> trial 1 = 0
+beetle$trial <- factor(
+  ifelse(as.character(beetle$Experiment)=='Second','1','0'))
+beetle$trial <- as.numeric(
+  levels(beetle$trial)[as.integer(beetle$trial)])
+#make it a dataframe
+beetle <- as.data.frame(beetle)
+
+#survival model
+b4<-brm(surv~trial*inf,data=beetle,family=binomial(link="logit"),
+        prior=c(prior(normal(0,10),class="Intercept"),
+                prior(normal(0,10),class="b")),chains=4,iter=4000)
+fixef(b4) %>%
+  round(digits=2)
+print(b4)
+#get posteriors
+postb4 <- posterior_samples(b4)
+
+#to get results
+uninft1 <- postb4$b_Intercept
+uninft2 <- postb4$b_Intercept + postb4$b_trial
+inft1 <- postb4$b_Intercept + postb4$b_inf
+inft2 <- postb4$b_Intercept + postb4$b_inf + postb4$b_trial + postb4$`b_trial:inf`
+tr1_uninf<-logistic(uninft1)
+tr1_inf<-logistic(inft1)
+tr2_uninf<-logistic(uninft2)
+tr2_inf<-logistic(inft2)
+#display the data
+median(tr1_inf)
+quantile(tr1_inf,probs=c(0.025,0.975))
+median(tr1_uninf)
+quantile(tr1_uninf,probs=c(0.025,0.975))
+median(tr2_inf)
+quantile(tr2_inf,probs=c(0.025,0.975))
+median(tr2_uninf)
+quantile(tr2_uninf,probs=c(0.025,0.975))
+#getting the posterior of the difference
+diff_tr1<-tr1_uninf-tr1_inf
+quantile(diff_tr1,probs=c(0.025,0.5,0.975))
+sum(diff_tr1<0)/8000
+diff_tr2<-tr2_uninf-tr2_inf
+quantile(diff_tr2,probs=c(0.025,0.5,0.975))
+sum(diff_tr2<0)/8000
+
+
+totalresults_raw <- as.data.frame(rbind(
+  tr1_uninf,tr1_inf,tr2_uninf,tr2_inf),names=TRUE
+)
+totalresults_raw<-t(totalresults_raw)
+totalresults_raw<-as.data.frame(totalresults_raw)
+totalresults_raw<-gather(totalresults_raw)
+totalresults_raw$trial <- 
+  ifelse(totalresults_raw$key=='tr1_uninf','Trial 1',
+         ifelse(totalresults_raw$key=='tr1_inf','Trial 1',
+                ifelse(totalresults_raw$key=='tr2_uninf','Trial 2','Trial 2')))
+totalresults_raw$inf <- 
+  ifelse(totalresults_raw$key=='tr1_uninf','Uninfected',
+         ifelse(totalresults_raw$key=='tr1_inf','Infected',
+                ifelse(totalresults_raw$key=='tr2_uninf','Uninfected',
+                       'Infected')))
+survplot <- ggplot(totalresults_raw,aes(x=inf,y=value))+
+  geom_violin()+
+  facet_wrap(~trial,ncol=1)+
+  geom_boxplot(width=0.1,outlier.alpha = 0)+
+  scale_y_continuous(limits=c(0,1))+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text())+
+  ylab("Probability of Survival (Median +/- 95% Credible Interval")
+survplot
+
+#size model
+beetletrim <- na.omit(beetle)
+bsize<-brm(Size~trial*inf,data=beetletrim,family="Normal",
+           prior=c(prior(normal(0,10),class="Intercept"),
+                   prior(normal(0,10),class="b")),chains=4,iter=4000)
+fixef(bsize) %>%
+  round(digits=2)
+summary(bsize)
+postsize <- posterior_samples(bsize)
+Uninfectedtrial1 <- 
+  postsize$b_Intercept
+Infectedtrial1 <- 
+  postsize$b_Intercept + postsize$b_inf
+Uninfectedtrial2 <- 
+  postsize$b_Intercept + postsize$b_trial
+Infectedtrial2 <- 
+  postsize$b_Intercept + postsize$b_inf + postsize$b_trial + postsize$`b_trial:inf`
+totalsize_raw <- as.data.frame(rbind(
+  Uninfectedtrial1,Infectedtrial1,Infectedtrial2,Uninfectedtrial2),
+  names=TRUE
+)
+totalsize_raw<-t(totalsize_raw)
+totalsize_data <- apply(totalsize_raw, 2, mean)
+median(Uninfectedtrial1)
+median(Uninfectedtrial2)
+median(Infectedtrial1)
+median(Infectedtrial2)
+quantile(Uninfectedtrial1,probs=c(0.025,0.975))
+quantile(Uninfectedtrial2,probs=c(0.025,0.975))
+quantile(Infectedtrial1,probs=c(0.025,0.975))
+quantile(Infectedtrial2,probs=c(0.025,0.975))
+
+totalsize_raw<-as.data.frame(totalsize_raw)
+totalsize_raw<-gather(totalsize_raw)
+totalsize_raw$trial <- 
+  ifelse(totalsize_raw$key=='Uninfectedtrial1','Trial 1',
+         ifelse(totalsize_raw$key=='Infectedtrial1','Trial 1',
+                ifelse(totalsize_raw$key=='Uninfectedtrial2','Trial 2','Trial 2')))
+totalsize_raw$inf <- 
+  ifelse(totalsize_raw$key=='Uninfectedtrial1','Uninfected',
+         ifelse(totalsize_raw$key=='Infectedtrial1','Infected',
+                ifelse(totalsize_raw$key=='Uninfectedtrial2','Uninfected',
+                       'Infected')))
+
+sizeplot <- ggplot(totalsize_raw,aes(x=inf,y=value))+
+  geom_violin()+
+  ylab("Size (mm) of beetles (Median +/- 95% Credible Interval")+
+  facet_wrap(~trial,ncol=1)+
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text())+
+  geom_boxplot(width=0.1,outlier.alpha = 0)
+sizeplot
+
+#getting the posterior of the difference for size
+diff_tr1_size<-Uninfectedtrial1-Infectedtrial1
+quantile(diff_tr1_size,probs=c(0.025,0.5,0.975))
+sum(diff_tr1_size<0)/8000
+diff_tr2_size<-Uninfectedtrial2-Infectedtrial2
+quantile(diff_tr2_size,probs=c(0.025,0.5,0.975))
+sum(diff_tr2_size<0)/8000
